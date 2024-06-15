@@ -4,6 +4,15 @@ Displays the Roblox game you're currently playing with rich presence.
 
 # Setup
 
+## Creating the configuration file
+Create a file in this folder named *config.json*, open it and paste this inside it:
+```json
+{
+    "token": "",
+    "userId": 0
+}
+```
+
 ## Getting Your User Id
 Go to your Roblox profile, copy the number after `https://www.roblox.com/users/`, and paste it inside *config.json* in `"userId":`.
 
