@@ -1,6 +1,6 @@
 const { Client } = require('discord-rpc');
 
-const { token, userId } = require('./config.json');
+const { token, userId, appId } = require('./config.json');
 
 const HEADERS = {cookie:'.ROBLOSECURITY='+token};
 /** @type {Client} */
@@ -14,18 +14,16 @@ function getStatus() {
                 userids: [ userId ]
             }),
             headers: HEADERS
-        }).then(
-            response => {
-                response.json()
-                    .then(
-                        json => resolve_status((json.userPresences||[])[0])
-                    )
-                    .catch(reject_status)
-                ;
+        })
+        .then(
+            response => response.json()
+        )
+        .then(
+            json => {
+                resolve_status((json.userPresences||[]).find(p=>p.userPresenceType==2));
             }
-        ).catch( 
-            reject_status
-        );
+        )
+        .catch(reject_status);
     });
 }
 
@@ -56,23 +54,19 @@ function getPrivateServerData(placeId) {
         fetch(url,{
             method: 'GET',
             headers: HEADERS
-        }).then(
-            response => {
-                response.json()
-                    .then(
-                        json => {
-                            if (json.data)
-                                resolve_data(json.data[0]);
-                            else
-                                resolve_data(null);
-                        }
-                    )
-                    .catch(reject_data)
-                ;
+        })
+        .then(
+            response => response.json()
+        )
+        .then(
+            json => {
+                if (json.data)
+                    resolve_data(json.data[0]);
+                else
+                    resolve_data(null);
             }
-        ).catch(
-            reject_data
-        );
+        )
+        .catch(reject_data);
     });
 }
 
@@ -82,23 +76,19 @@ function getServerData(placeId) {
         fetch(url,{
             method: 'GET',
             headers: HEADERS
-        }).then(
-            response => {
-                response.json()
-                    .then(
-                        json => {
-                            if (json.data)
-                                resolve_data(json.data[0]);
-                            else
-                                resolve_data(null);
-                        }
-                    )
-                    .catch(reject_data)
-                ;
+        })
+        .then(
+            response => response.json()
+        )
+        .then(
+            json => {
+                if (json.data)
+                    resolve_data(json.data[0]);
+                else
+                    resolve_data(null);
             }
-        ).catch(
-            reject_data
-        );
+        )
+        .catch(reject_data);
     });
 }
 
@@ -114,7 +104,7 @@ function loginRPC() {
                 client = undefined;
             });
             try {
-                await client.login({clientId:'1170729554726371459'});
+                await client.login({clientId:appId});
             } catch (e) {
                 client.destroy();
                 client = undefined;
@@ -122,6 +112,8 @@ function loginRPC() {
                 return resolve_login(e);
             }
         }
+        else
+            resolve_login(null);
     });
 }
 
@@ -129,8 +121,9 @@ function loginRPC() {
  * @param {import('discord-rpc').Presence} presence
  */
 async function setPresence(presence) {
-    if (await loginRPC()) return;
-    client.setActivity(presence);
+    const err = await loginRPC();
+    if (err) return {err};
+    return {result:await client.setActivity(presence)};
 }
 
 async function clearPresence() {
@@ -138,47 +131,62 @@ async function clearPresence() {
         return await client.clearActivity();
 }
 
-async function update() {
+(async()=>{
 
-    let status = await getStatus();
+    let startTimestamp = null;
 
-    if (status) {
+    for (;;) {
 
-        if (status.userPresenceType == 2) {
+        await new Promise(r=>setTimeout(r,2000));
 
-            let startTimestamp = new Date(status.lastOnline).getTime();
+        try {
 
-            /** @type {import('discord-rpc').Presence} */
-            let presence = {
-                details: status.lastLocation,
-                largeImageText: status.lastLocation,
-                smallImageKey: 'roblox',
-                startTimestamp: startTimestamp
+            let status = await getStatus();
+
+            if (status) {
+
+                if (!startTimestamp)
+                    startTimestamp = Date.now();
+
+                /** @type {import('discord-rpc').Presence} */
+                let presence = {
+                    details: status.lastLocation,
+                    largeImageText: status.lastLocation,
+                    smallImageKey: 'roblox',
+                    startTimestamp
+                }
+
+                const placeId = status.placeId||status.rootPlaceId;
+                
+                let icon = await getGameIcon(placeId);
+                if (icon) {
+                    presence.largeImageKey = icon;
+                }
+
+                let server = await getServerData(placeId) || await getPrivateServerData(placeId);
+                if (server) {
+                    presence.partySize = server.playing;
+                    presence.partyMax = server.maxPlayers;
+                    presence.state = (server.players?.length||0)>1 ? `${server.players.length-1} friend${server.players.length-1==1?'':'s'}` : 'Playing';
+                }
+                
+                const {err} = await setPresence(presence);
+                if (err)
+                    console.log(err);
+
+            } else {
+
+                startTimestamp = null;
+                await clearPresence();
+
             }
 
-            const placeId = status.placeId||status.rootPlaceId;
-            
-            let icon = await getGameIcon(placeId);
-            if (icon) {
-                presence.largeImageKey = icon;
-            }
+        } catch (e) {
 
-            let server = await getServerData(placeId) || await getPrivateServerData(placeId);
-            if (server) {
-                presence.partySize = server.playing;
-                presence.partyMax = server.maxPlayers;
-                presence.state = (server.players?.length||0)>1 ? `${server.players.length-1} friend${server.players.length-1==1?'':'s'}` : 'Playing';
-            }
-            
-            setPresence(presence);
+            console.error(e);
 
-        } else
-            clearPresence();
+        }
 
-    } else
-        clearPresence();
+    }
 
-}
-
-setInterval( update, 10*1000 ); // Updates every 10 seconds
-update();
+})();
